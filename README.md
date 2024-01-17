@@ -1,2 +1,2 @@
-# bevy_spaceinvaders
-A short experiment with bevy to familiarize myself with the engine and its systemsby creating a space invaders "clone".
+# bevy_asteroids
+A short experiment with Bevy to familiarize myself with the engine and its systems by creating a "clone" of the game Asteroids.
