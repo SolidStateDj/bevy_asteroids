@@ -1,7 +1,7 @@
 mod input;
 mod player;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, window::PrimaryWindow};
 use leafwing_input_manager::{prelude::*, user_input::InputKind};
 use player::PlayerPlugin;
 
@@ -55,7 +55,15 @@ impl PlayerAction {
     }
 }
 
-fn setup(mut commands: Commands) {
-    commands.spawn(Camera2dBundle::default());
+#[derive(Component)]
+pub struct MainCamera;
+
+fn setup(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow>>) {
+    let window = window_query.get_single().unwrap();
+    commands.spawn((Camera2dBundle {
+        transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0),
+        ..default()
+    }, MainCamera));
 }
+
 

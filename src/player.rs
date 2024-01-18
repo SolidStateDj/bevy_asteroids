@@ -1,5 +1,16 @@
-use bevy::{prelude::*, window::PrimaryWindow};
-use leafwing_input_manager::{axislike::DualAxisData, action_state::ActionState, plugin::InputManagerPlugin};
+use std::f32::consts::FRAC_PI_2;
+
+use bevy::{prelude::*, window::PrimaryWindow, ecs::query};
+use leafwing_input_manager::{axislike::DualAxisData, action_state::ActionState};
+
+pub const PLAYER_SIZE: f32 = 0.5;
+pub const HALF_PLAYER_SIZE: f32 = 16.0;
+pub const PLAYER_SPEED: f32 = 2.0;
+pub const PLAYER_TIME_UNTIL_NEXT_SHOT: f32 = 1./5.;
+
+pub const BULLET_SPEED: f32 = 250.0;
+
+pub const DESPAWN_DISTANCE: f32 = 50.0;
 
 use crate::{PlayerAction, input::{ActiveInput, InputModeManagerPlugin}};
 
@@ -10,15 +21,17 @@ impl Plugin for PlayerPlugin {
         app.add_plugins(InputModeManagerPlugin);
         // Defined below, detects whether MKB or gamepad are active
         app.init_resource::<ActionState<PlayerAction>>();
+        app.init_resource::<BulletFirerateTimer>();
         app.insert_resource(PlayerAction::default_input_map());
-
-        app
-            .add_systems(Startup, spawn_player)
-            .add_systems(
-                Update,
-                player_mouse_look.run_if(in_state(ActiveInput::MouseKeyboard)),
-            )
-            .add_systems(Update, control_player.after(player_mouse_look));
+        app.add_systems(Startup, spawn_player);
+        app.add_systems(Update, (
+            player_mouse_look.run_if(in_state(ActiveInput::MouseKeyboard)),
+            control_player.after(player_mouse_look),
+            confine_player_movement,
+            update_bullets,
+            despawn_bullets,
+            tick_bullet_timer,
+        ));
     } 
 }
 
@@ -26,88 +39,190 @@ impl Plugin for PlayerPlugin {
 #[derive(Component)]
 struct Player;
 
-fn spawn_player(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow>>, asset_server: Res<AssetServer>) {
-    let window = window_query.get_single().unwrap();
-
-    let texture: Handle<Image> = asset_server.load("sprites/Player.png");
-
-    commands.spawn((SpriteBundle {
-        transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0),
-        texture: texture, 
-        ..default()
-    }, Player {},));
-
-    // commands.spawn(InputManagerBundle::<PlayerAction> {
-        // action_state: ActionState::default(),
-        // input_map: InputMap::new([KeyCode::W, Action::Move])
-    // });
+// Player Stuff
+#[derive(Component)]
+struct PlayerData {
+    lives: u32,
+    rpm: f32,
+    pub can_fire: bool,
+    stats: Stats,
+    thrust: bool,
+}
+struct Stats {
+    score: u32,
+    asteroids_destroyed: u32,
+    level: u32,
+    shots_fired: u32,
+}
+#[derive(Bundle)]
+struct PlayerBundle {
+    player: PlayerData,
+    sprite: SpriteBundle,
 }
 
-fn player_mouse_look(
-    camera_query: Query<(&GlobalTransform, &Camera)>,
-    player_query: Query<&Transform, With<Player>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    mut action_state: ResMut<ActionState<PlayerAction>>,
-) {
-    // Update each actionstate with the mouse position from the window
-    // by using the referenced entities in ActionStateDriver and the stored action as
-    // a key into the action data
-    let (camera_transform, camera) = camera_query.get_single().expect("Need a single camera");
-    let player_transform = player_query.get_single().expect("Need a single player");
-    let window = window_query
-        .get_single()
-        .expect("Need a single primary window");
+// Bullet Stuff
+#[derive(Component)]
+pub struct Bullet {
+    pub direction: Vec2,
+}
 
-    // Many steps can fail here, so we'll wrap in an option pipeline
-    // First check if cursor is in window
-    // Then check if the ray intersects the plane defined by the player
-    // Then finally compute the point along the ray to look at
-    if let Some(p) = window
-        .cursor_position()
-        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
-        .and_then(|ray| Some(ray).zip(ray.intersect_plane(player_transform.translation, Vec3::Y)))
-        .map(|(ray, p)| ray.get_point(p))
-    {
-        let diff = (p - player_transform.translation).xz();
-        if diff.length_squared() > 1e-3f32 {
-            // Press the look action, so we can check that it is active
-            action_state.press(PlayerAction::Look);
-            // Modify the action data to set the axis
-            let action_data = action_state.action_data_mut(PlayerAction::Look);
-            // Flipping y sign here to be consistent with gamepad input. We could also invert the gamepad y axis
-            action_data.axis_pair = Some(DualAxisData::from_xy(Vec2::new(diff.x, -diff.y)));
+#[derive(Resource)]
+pub struct BulletFirerateTimer {
+    pub timer: Timer,
+}
+
+impl Default for BulletFirerateTimer {
+    fn default() -> Self {
+        BulletFirerateTimer {
+            timer: Timer::from_seconds(PLAYER_TIME_UNTIL_NEXT_SHOT, TimerMode::Repeating),
         }
     }
 }
 
+fn spawn_player(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow>>, asset_server: Res<AssetServer>) {
+    let window = window_query.get_single().unwrap();
+    let player: Handle<Image> = asset_server.load("sprites/Player.png");
+
+    commands.spawn((PlayerBundle {
+        player: PlayerData { 
+            lives: 3, 
+            rpm: 60.0,
+            can_fire: true,
+            stats: Stats { 
+                score: 0, 
+                asteroids_destroyed: 0, 
+                level: 1, 
+                shots_fired: 0 
+            },
+            thrust: false
+        },
+        sprite: SpriteBundle {
+            transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0).with_scale(Vec3::new(PLAYER_SIZE, PLAYER_SIZE, 0.0)),
+            texture: player, 
+            ..default()
+        }
+    }, Player));
+}
+
+fn player_mouse_look(
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut action_state: ResMut<ActionState<PlayerAction>>,
+) {
+    if let Some(cursor_pos) = window_query.single().cursor_position() {
+        action_state.press(PlayerAction::Look);
+        let action_data = action_state.action_data_mut(PlayerAction::Look);
+        action_data.axis_pair = Some(DualAxisData::from_xy(cursor_pos));
+    }
+}
+
 fn control_player(
-    time: Res<Time>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
     action_state: Res<ActionState<PlayerAction>>,
+    mut pl_query: Query<&mut PlayerData, With<Player>>,
     mut query: Query<&mut Transform, With<Player>>,
+    timer: Res<BulletFirerateTimer>,
 ) {
     let mut player_transform = query.single_mut();
+    let mut player = pl_query.get_single_mut().unwrap();
+    let bullet: Handle<Image> = asset_server.load("sprites/Square.png");
     if action_state.pressed(PlayerAction::Move) {
-        // Note: In a real game we'd feed this into an actual player controller
-        // and respects the camera extrinsics to ensure the direction is correct
-        let move_delta = time.delta_seconds()
-            * action_state
-                .clamped_axis_pair(PlayerAction::Move)
-                .unwrap()
-                .xy();
-        player_transform.translation += Vec3::new(move_delta.x, 0.0, move_delta.y);
-        println!("Player moved to: {}", player_transform.translation.xz());
+        let move_delta = action_state.clamped_axis_pair(PlayerAction::Move).unwrap().xy() * PLAYER_SPEED;
+        player_transform.translation += Vec3::new(move_delta.x, move_delta.y, 0.0);
+        println!("Player moved to: {}", player_transform.translation.xy());
     }
 
     if action_state.pressed(PlayerAction::Look) {
-        let look = action_state
-            .axis_pair(PlayerAction::Look)
-            .unwrap()
-            .xy()
-            .normalize();
-        println!("Player looking in direction: {}", look);
+        let look = action_state.axis_pair(PlayerAction::Look).unwrap().xy();
+        // println!("Player looking at point: {}", look);
+        // let mut player_transform = query.get_single().expect("Need a single player");
+        let player_pos: Vec2 = player_transform.translation.xy();
+        let angle = (look - player_pos).angle_between(player_pos);
+        player_transform.rotation = Quat::from_rotation_z(angle - FRAC_PI_2);
+        // println!("Player is now at {} with rotation {}", player_transform.translation.xy(), player_transform.rotation);
     }
 
     if action_state.pressed(PlayerAction::Shoot) {
-        println!("Shoot!")
+        if player.can_fire {
+            println!("Shoot!");
+            commands.spawn((SpriteBundle {
+                texture: bullet,
+                transform: Transform {
+                    translation: Vec3::new(player_transform.translation.x, player_transform.translation.y, 0.0),
+                    rotation: player_transform.rotation, 
+                    // rotation: Quat::from_xyzw(player_transform.translation.x, player_transform.translation.y, player_transform.translation.z, 0.0),
+                    ..default()
+                },
+                ..default()
+            }, Bullet {
+                direction: Vec2::new(player_transform.rotation.x, player_transform.rotation.y),
+            }));
+            player.can_fire = false;
+        } else if timer.timer.finished() {
+            println!("Timer Finished");
+            player.can_fire = true;
+        }
     }
+}
+
+fn confine_player_movement(mut player_query: Query<&mut Transform, With<Player>>, window_query: Query<&Window, With<PrimaryWindow>>) {
+    if let Ok(mut player_transform) = player_query.get_single_mut() {
+        let window = window_query.get_single().unwrap();
+        
+        let x_min = 0.0 + HALF_PLAYER_SIZE;
+        let x_max = window.width() - HALF_PLAYER_SIZE;
+        let y_min = 0.0 + HALF_PLAYER_SIZE;
+        let y_max = window.height() - HALF_PLAYER_SIZE;
+
+
+        let mut translation = player_transform.translation;
+        if translation.x < x_min {
+            translation.x = x_min;
+        } else if translation.x > x_max {
+            translation.x = x_max;
+        }
+        if translation.y < y_min {
+            translation.y = y_min;
+        } else if translation.y > y_max {
+            translation.y = y_max;
+        }
+
+        player_transform.translation = translation;
+    }
+}
+
+fn update_bullets(mut bullet_query: Query<(&mut Transform, &Bullet)>, time: Res<Time>) {
+    for (mut transform, bullet) in bullet_query.iter_mut() {
+        let direction = Vec3::new(1.0, 1.0, 0.0);
+        transform.translation += direction * BULLET_SPEED * time.delta_seconds();
+    }
+}
+
+fn despawn_bullets(mut commands: Commands, bullet_query: Query<((Entity, With<Bullet>), &Transform)>, window_query: Query<&Window, With<PrimaryWindow>>) {
+    let window = window_query.get_single().unwrap();
+    let x_min = 0.0 - DESPAWN_DISTANCE;
+    let x_max = window.width() + DESPAWN_DISTANCE;
+    let y_min = 0.0 - DESPAWN_DISTANCE;
+    let y_max = window.height() + DESPAWN_DISTANCE;
+
+    for (bullet, transform) in bullet_query.iter() {    
+        if transform.translation.x < x_min {
+            println!("Despawned at {}", transform.translation.xy());
+            commands.entity(bullet.0).despawn_recursive();
+        } else if transform.translation.x > x_max {
+            println!("Despawned at {}", transform.translation.xy());
+            commands.entity(bullet.0).despawn_recursive();
+        }
+        if transform.translation.y < y_min {
+            println!("Despawned at {}", transform.translation.xy());
+            commands.entity(bullet.0).despawn_recursive();
+        } else if transform.translation.y > y_max {
+            println!("Despawned at {}", transform.translation.xy());
+            commands.entity(bullet.0).despawn_recursive();
+        }
+    }
+}
+
+fn tick_bullet_timer(mut bullet_firerate_timer: ResMut<BulletFirerateTimer>, time: Res<Time>) {
+    bullet_firerate_timer.timer.tick(time.delta());
 }
