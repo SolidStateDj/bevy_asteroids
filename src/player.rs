@@ -1,160 +1,142 @@
-use std::f32::consts::FRAC_PI_2;
-
-use bevy::{prelude::*, window::PrimaryWindow};
-use leafwing_input_manager::{axislike::DualAxisData, action_state::ActionState};
+use bevy::{prelude::*, window::PrimaryWindow, transform};
 
 pub const PLAYER_SIZE: f32 = 0.5;
 pub const HALF_PLAYER_SIZE: f32 = 16.0;
-pub const PLAYER_SPEED: f32 = 2.0;
-pub const PLAYER_TIME_UNTIL_NEXT_SHOT: f32 = 1./5.;
+pub const PLAYER_TIME_UNTIL_NEXT_SHOT: f32 = 0.2;
 
-use crate::{PlayerAction, input::{ActiveInput, InputModeManagerPlugin}, bullets::{Bullet, BulletsPlugin}};
+use crate::{bullets::{Bullet, BulletsPlugin}, schedules::InGameSet, movement::{MovingObjectBundle, Velocity, Acceleration, self}, collisions::Collider, asset_loader::SceneAssets, player};
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-                InputModeManagerPlugin, 
                 BulletsPlugin,
         ));
-        // Defined below, detects whether MKB or gamepad are active
-        app.init_resource::<ActionState<PlayerAction>>();
         app.init_resource::<PlayerFirerateTimer>();
-        app.insert_resource(PlayerAction::default_input_map());
-        app.add_systems(Startup, spawn_player);
+        app.add_systems(PostStartup, spawn_player);
         app.add_systems(Update, (
-            player_mouse_look.run_if(in_state(ActiveInput::MouseKeyboard)),
-            control_player.after(player_mouse_look),
+            player_movement,
             confine_player_movement,
+            player_weapon,
+            player_shield,
+        ).chain().in_set(InGameSet::UserInput));
+        app.add_systems(Update, (
             tick_player_shot_timer,
         ));
     } 
 }
 
-// A player marker
-#[derive(Component)]
-struct Player;
 
 // Player Stuff
+// A player marker
+#[derive(Component)]
+pub struct Player {
+    player_data: PlayerData,
+}
+
+#[derive(Component, Debug)]
+pub struct PlayerBullet;
+
+#[derive(Component, Debug)]
+pub struct PlayerSheild;
+
+// Player Data
 #[derive(Component)]
 struct PlayerData {
     lives: u32,
     rpm: f32,
     pub can_fire: bool,
+    pub boosting: Vec3,
+    pub max_speed: f32,
+    pub rotation_speed: f32,
+    pub firerate: f32,
     stats: Stats,
-    thrust: bool,
 }
+// Stats for the player
 struct Stats {
     score: u32,
     asteroids_destroyed: u32,
     level: u32,
     shots_fired: u32,
 }
-#[derive(Bundle)]
-struct PlayerBundle {
-    player: PlayerData,
-    sprite: SpriteBundle,
-}
 
 
-#[derive(Resource)]
-pub struct PlayerFirerateTimer {
-    pub timer: Timer,
-}
 
-impl Default for PlayerFirerateTimer {
-    fn default() -> Self {
-        PlayerFirerateTimer {
-            timer: Timer::from_seconds(PLAYER_TIME_UNTIL_NEXT_SHOT, TimerMode::Repeating),
-        }
-    }
-}
-
-fn spawn_player(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow>>, asset_server: Res<AssetServer>) {
+// Spawns the player bundle
+fn spawn_player(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow>>, scene_assets: Res<SceneAssets>,) {
     let window = window_query.get_single().unwrap();
-    let player: Handle<Image> = asset_server.load("sprites/Player.png");
+    let player: Handle<Image> = scene_assets.spaceship.clone();
 
-    commands.spawn((PlayerBundle {
-        player: PlayerData { 
+    commands.spawn((MovingObjectBundle {
+        velocity: Velocity::new(Vec3::ZERO),
+        acceleration: Acceleration::new(Vec3::ZERO),
+        collider: Collider::new(PLAYER_SIZE),
+        sprite: SpriteBundle {
+            transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0).with_scale(Vec3::new(PLAYER_SIZE, PLAYER_SIZE, 0.0)),
+            texture: player, 
+            ..default()
+        }
+    }, Player {
+        player_data: PlayerData { 
             lives: 3, 
             rpm: 60.0,
             can_fire: true,
+            boosting: Vec3::ZERO,
+            max_speed: 10.0,
+            rotation_speed: 1.0,
+            firerate: 0.2,
             stats: Stats { 
                 score: 0, 
                 asteroids_destroyed: 0, 
                 level: 1, 
                 shots_fired: 0 
             },
-            thrust: false
         },
-        sprite: SpriteBundle {
-            transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0).with_scale(Vec3::new(PLAYER_SIZE, PLAYER_SIZE, 0.0)),
-            texture: player, 
-            ..default()
-        }
-    }, Player));
+    }));
 }
 
-fn player_mouse_look(
+fn player_movement(
+    keyboard_input: Res<Input<KeyCode>>,
+    player_data: Query<&Player>,
+    mut player_query: Query<(&mut Transform, &mut Velocity), With<Player>>, 
     window_query: Query<&Window, With<PrimaryWindow>>,
-    mut action_state: ResMut<ActionState<PlayerAction>>,
+    time: Res<Time>,
 ) {
-    if let Some(cursor_pos) = window_query.single().cursor_position() {
-        action_state.press(PlayerAction::Look);
-        let action_data = action_state.action_data_mut(PlayerAction::Look);
-        action_data.axis_pair = Some(DualAxisData::from_xy(cursor_pos));
+    let Ok(player) = player_data.get_single() else {
+        println!("Brokey");
+        return;
+    };
+    let Ok((mut transform, mut velocity)) = player_query.get_single_mut() else {
+        return;
+    };
+
+    let mut rotation = 0.0;
+    let mut movement = 0.0;
+    let mut thrust = 0.0;
+
+    if keyboard_input.pressed(KeyCode::W) || keyboard_input.pressed(KeyCode::Up) {
+    } 
+    // Rotate Left
+    if keyboard_input.pressed(KeyCode::A) || keyboard_input.pressed(KeyCode::Left) {
+        rotation = player.player_data.rotation_speed * time.delta_seconds();
     }
+    // Slow Down
+    if keyboard_input.pressed(KeyCode::S) || keyboard_input.pressed(KeyCode::Down) {
+    }
+    // Rotate Right
+    if keyboard_input.pressed(KeyCode::D) || keyboard_input.pressed(KeyCode::Right) {
+        rotation = -player.player_data.rotation_speed * time.delta_seconds();
+    }
+    println!("{}", rotation);
 }
 
-fn control_player(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    action_state: Res<ActionState<PlayerAction>>,
-    mut pl_query: Query<&mut PlayerData, With<Player>>,
-    mut query: Query<&mut Transform, With<Player>>,
-    timer: Res<PlayerFirerateTimer>,
-) {
-    let mut player_transform = query.single_mut();
-    let mut player = pl_query.get_single_mut().unwrap();
-    let bullet: Handle<Image> = asset_server.load("sprites/Square.png");
-    if action_state.pressed(PlayerAction::Move) {
-        let move_delta = action_state.clamped_axis_pair(PlayerAction::Move).unwrap().xy() * PLAYER_SPEED;
-        player_transform.translation += Vec3::new(move_delta.x, move_delta.y, 0.0);
-        println!("Player moved to: {}", player_transform.translation.xy());
-    }
+fn player_weapon(mut player_query: Query<&mut Transform, With<Player>>, timer: Res<PlayerFirerateTimer>) {
 
-    if action_state.pressed(PlayerAction::Look) {
-        let look = action_state.axis_pair(PlayerAction::Look).unwrap().xy();
-        // println!("Player looking at point: {}", look);
-        // let mut player_transform = query.get_single().expect("Need a single player");
-        let player_pos: Vec2 = player_transform.translation.xy();
-        let angle = (look - player_pos).angle_between(player_pos);
-        player_transform.rotation = Quat::from_rotation_z(angle - FRAC_PI_2);
-        // println!("Player is now at {} with rotation {}", player_transform.translation.xy(), player_transform.rotation);
-    }
+}
 
-    if action_state.pressed(PlayerAction::Shoot) {
-        if player.can_fire {
-            println!("Shoot!");
-            commands.spawn((SpriteBundle {
-                texture: bullet,
-                transform: Transform {
-                    translation: Vec3::new(player_transform.translation.x, player_transform.translation.y, 0.0),
-                    rotation: player_transform.rotation, 
-                    // rotation: Quat::from_xyzw(player_transform.translation.x, player_transform.translation.y, player_transform.translation.z, 0.0),
-                    ..default()
-                },
-                ..default()
-            }, Bullet {
-                direction: Vec2::new(player_transform.rotation.x, player_transform.rotation.y),
-            }));
-            player.can_fire = false;
-        } else if timer.timer.finished() {
-            println!("Timer Finished");
-            player.can_fire = true;
-        }
-    }
+fn player_shield() {
+    
 }
 
 fn confine_player_movement(mut player_query: Query<&mut Transform, With<Player>>, window_query: Query<&Window, With<PrimaryWindow>>) {
@@ -183,6 +165,20 @@ fn confine_player_movement(mut player_query: Query<&mut Transform, With<Player>>
     }
 }
 
+#[derive(Resource)]
+pub struct PlayerFirerateTimer {
+    pub timer: Timer,
+}
+
+impl Default for PlayerFirerateTimer {
+    fn default() -> Self {
+        PlayerFirerateTimer {
+            timer: Timer::from_seconds(PLAYER_TIME_UNTIL_NEXT_SHOT, TimerMode::Repeating),
+        }
+    }
+}
+
+// Timer until player can fire another bullet.
 fn tick_player_shot_timer(mut bullet_firerate_timer: ResMut<PlayerFirerateTimer>, time: Res<Time>) {
     bullet_firerate_timer.timer.tick(time.delta());
 }
