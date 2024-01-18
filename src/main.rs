@@ -1,5 +1,6 @@
 mod input;
 mod player;
+mod bullets;
 
 use bevy::{prelude::*, window::PrimaryWindow};
 use leafwing_input_manager::{prelude::*, user_input::InputKind};

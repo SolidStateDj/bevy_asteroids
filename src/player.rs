@@ -1,6 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
-use bevy::{prelude::*, window::PrimaryWindow, ecs::query};
+use bevy::{prelude::*, window::PrimaryWindow};
 use leafwing_input_manager::{axislike::DualAxisData, action_state::ActionState};
 
 pub const PLAYER_SIZE: f32 = 0.5;
@@ -8,29 +8,26 @@ pub const HALF_PLAYER_SIZE: f32 = 16.0;
 pub const PLAYER_SPEED: f32 = 2.0;
 pub const PLAYER_TIME_UNTIL_NEXT_SHOT: f32 = 1./5.;
 
-pub const BULLET_SPEED: f32 = 250.0;
-
-pub const DESPAWN_DISTANCE: f32 = 50.0;
-
-use crate::{PlayerAction, input::{ActiveInput, InputModeManagerPlugin}};
+use crate::{PlayerAction, input::{ActiveInput, InputModeManagerPlugin}, bullets::{Bullet, BulletsPlugin}};
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(InputModeManagerPlugin);
+        app.add_plugins((
+                InputModeManagerPlugin, 
+                BulletsPlugin,
+        ));
         // Defined below, detects whether MKB or gamepad are active
         app.init_resource::<ActionState<PlayerAction>>();
-        app.init_resource::<BulletFirerateTimer>();
+        app.init_resource::<PlayerFirerateTimer>();
         app.insert_resource(PlayerAction::default_input_map());
         app.add_systems(Startup, spawn_player);
         app.add_systems(Update, (
             player_mouse_look.run_if(in_state(ActiveInput::MouseKeyboard)),
             control_player.after(player_mouse_look),
             confine_player_movement,
-            update_bullets,
-            despawn_bullets,
-            tick_bullet_timer,
+            tick_player_shot_timer,
         ));
     } 
 }
@@ -60,20 +57,15 @@ struct PlayerBundle {
     sprite: SpriteBundle,
 }
 
-// Bullet Stuff
-#[derive(Component)]
-pub struct Bullet {
-    pub direction: Vec2,
-}
 
 #[derive(Resource)]
-pub struct BulletFirerateTimer {
+pub struct PlayerFirerateTimer {
     pub timer: Timer,
 }
 
-impl Default for BulletFirerateTimer {
+impl Default for PlayerFirerateTimer {
     fn default() -> Self {
-        BulletFirerateTimer {
+        PlayerFirerateTimer {
             timer: Timer::from_seconds(PLAYER_TIME_UNTIL_NEXT_SHOT, TimerMode::Repeating),
         }
     }
@@ -121,7 +113,7 @@ fn control_player(
     action_state: Res<ActionState<PlayerAction>>,
     mut pl_query: Query<&mut PlayerData, With<Player>>,
     mut query: Query<&mut Transform, With<Player>>,
-    timer: Res<BulletFirerateTimer>,
+    timer: Res<PlayerFirerateTimer>,
 ) {
     let mut player_transform = query.single_mut();
     let mut player = pl_query.get_single_mut().unwrap();
@@ -191,38 +183,6 @@ fn confine_player_movement(mut player_query: Query<&mut Transform, With<Player>>
     }
 }
 
-fn update_bullets(mut bullet_query: Query<(&mut Transform, &Bullet)>, time: Res<Time>) {
-    for (mut transform, bullet) in bullet_query.iter_mut() {
-        let direction = Vec3::new(1.0, 1.0, 0.0);
-        transform.translation += direction * BULLET_SPEED * time.delta_seconds();
-    }
-}
-
-fn despawn_bullets(mut commands: Commands, bullet_query: Query<((Entity, With<Bullet>), &Transform)>, window_query: Query<&Window, With<PrimaryWindow>>) {
-    let window = window_query.get_single().unwrap();
-    let x_min = 0.0 - DESPAWN_DISTANCE;
-    let x_max = window.width() + DESPAWN_DISTANCE;
-    let y_min = 0.0 - DESPAWN_DISTANCE;
-    let y_max = window.height() + DESPAWN_DISTANCE;
-
-    for (bullet, transform) in bullet_query.iter() {    
-        if transform.translation.x < x_min {
-            println!("Despawned at {}", transform.translation.xy());
-            commands.entity(bullet.0).despawn_recursive();
-        } else if transform.translation.x > x_max {
-            println!("Despawned at {}", transform.translation.xy());
-            commands.entity(bullet.0).despawn_recursive();
-        }
-        if transform.translation.y < y_min {
-            println!("Despawned at {}", transform.translation.xy());
-            commands.entity(bullet.0).despawn_recursive();
-        } else if transform.translation.y > y_max {
-            println!("Despawned at {}", transform.translation.xy());
-            commands.entity(bullet.0).despawn_recursive();
-        }
-    }
-}
-
-fn tick_bullet_timer(mut bullet_firerate_timer: ResMut<BulletFirerateTimer>, time: Res<Time>) {
+fn tick_player_shot_timer(mut bullet_firerate_timer: ResMut<PlayerFirerateTimer>, time: Res<Time>) {
     bullet_firerate_timer.timer.tick(time.delta());
 }
