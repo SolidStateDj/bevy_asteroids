@@ -1,62 +1,230 @@
-use std::f32::consts::FRAC_PI_2;
-
-use bevy::{prelude::*, window::PrimaryWindow};
-use leafwing_input_manager::{axislike::DualAxisData, action_state::ActionState};
+use bevy::{prelude::*, window::PrimaryWindow, transform};
 
 pub const PLAYER_SIZE: f32 = 0.5;
 pub const HALF_PLAYER_SIZE: f32 = 16.0;
-pub const PLAYER_SPEED: f32 = 2.0;
-pub const PLAYER_TIME_UNTIL_NEXT_SHOT: f32 = 1./5.;
+pub const PLAYER_TIME_UNTIL_NEXT_SHOT: f32 = 0.15;
 
-use crate::{PlayerAction, input::{ActiveInput, InputModeManagerPlugin}, bullets::{Bullet, BulletsPlugin}};
+pub const MISSILE_SPEED: f32 = 500.0;
+pub const MISSILE_SIZE: f32 = 0.1;
+
+use crate::{bullets::{Bullet, BulletsPlugin}, schedules::InGameSet, movement::{MovingObjectBundle, Velocity, Acceleration, self}, collisions::Collider, asset_loader::SceneAssets, player};
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-                InputModeManagerPlugin, 
                 BulletsPlugin,
         ));
-        // Defined below, detects whether MKB or gamepad are active
-        app.init_resource::<ActionState<PlayerAction>>();
         app.init_resource::<PlayerFirerateTimer>();
-        app.insert_resource(PlayerAction::default_input_map());
-        app.add_systems(Startup, spawn_player);
+        app.add_systems(PostStartup, spawn_player);
         app.add_systems(Update, (
-            player_mouse_look.run_if(in_state(ActiveInput::MouseKeyboard)),
-            control_player.after(player_mouse_look),
+            player_movement,
             confine_player_movement,
+            player_weapon,
+            player_shield,
+        ).chain().in_set(InGameSet::UserInput));
+        app.add_systems(Update, (
             tick_player_shot_timer,
         ));
     } 
 }
 
-// A player marker
-#[derive(Component)]
-struct Player;
 
 // Player Stuff
+// A player marker
+#[derive(Component)]
+pub struct Player {
+    player_data: PlayerData,
+}
+
+#[derive(Component, Debug)]
+pub struct PlayerBullet;
+
+#[derive(Component, Debug)]
+pub struct PlayerShield;
+
+// Player Data
 #[derive(Component)]
 struct PlayerData {
     lives: u32,
     rpm: f32,
     pub can_fire: bool,
+    pub boosting: Vec3,
+    pub speed: f32,
+    pub max_speed: f32,
+    pub rotation_speed: f32,
+    pub firerate: f32,
     stats: Stats,
-    thrust: bool,
 }
+// Stats for the player
 struct Stats {
     score: u32,
     asteroids_destroyed: u32,
     level: u32,
     shots_fired: u32,
 }
-#[derive(Bundle)]
-struct PlayerBundle {
-    player: PlayerData,
-    sprite: SpriteBundle,
+
+// Spawns the player bundle
+fn spawn_player(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow>>, scene_assets: Res<SceneAssets>,) {
+    let window = window_query.get_single().unwrap();
+    let player: Handle<Image> = scene_assets.spaceship.clone();
+
+    commands.spawn((MovingObjectBundle {
+        velocity: Velocity::new(Vec3::ZERO),
+        acceleration: Acceleration::new(Vec3::ZERO),
+        collider: Collider::new(PLAYER_SIZE),
+        sprite: SpriteBundle {
+            transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0).with_scale(Vec3::new(PLAYER_SIZE, PLAYER_SIZE, 0.0)),
+            texture: player, 
+            ..default()
+        }
+    }, Player {
+        player_data: PlayerData { 
+            lives: 3, 
+            rpm: 60.0,
+            can_fire: true,
+            boosting: Vec3::ZERO,
+            speed: 200.0,
+            max_speed: 10.0,
+            rotation_speed: 4.0,
+            firerate: PLAYER_TIME_UNTIL_NEXT_SHOT,
+            stats: Stats { 
+                score: 0, 
+                asteroids_destroyed: 0, 
+                level: 1, 
+                shots_fired: 0 
+            },
+        },
+    }));
 }
 
+fn player_movement(
+    keyboard_input: Res<Input<KeyCode>>,
+    player_data: Query<&Player>,
+    mut player_query: Query<(&mut Transform, &mut Acceleration), With<Player>>, 
+    time: Res<Time>,
+) {
+    let Ok(player) = player_data.get_single() else {
+        println!("Brokey");
+        return;
+    };
+    let Ok((mut transform, mut acceleration)) = player_query.get_single_mut() else {
+        return;
+    };
+
+    let mut rotation = 0.0;
+    let mut movement = 0.0;
+    let mut direction = Vec3::ZERO;
+
+    if keyboard_input.pressed(KeyCode::W) || keyboard_input.pressed(KeyCode::Up) {
+        movement = player.player_data.speed;
+        direction += transform.up();
+    }
+    // Rotate Left
+    if keyboard_input.pressed(KeyCode::A) || keyboard_input.pressed(KeyCode::Left) {
+        rotation = player.player_data.rotation_speed * time.delta_seconds();
+    }
+    // Slow Down
+    if keyboard_input.pressed(KeyCode::S) || keyboard_input.pressed(KeyCode::Down) {
+        movement = -player.player_data.speed;
+        direction += transform.up();
+    }
+    // Rotate Right
+    if keyboard_input.pressed(KeyCode::D) || keyboard_input.pressed(KeyCode::Right) {
+        rotation = -player.player_data.rotation_speed * time.delta_seconds();
+    }
+    transform.rotate_z(rotation);
+
+    if direction.length() > 0.0 {
+        direction = direction.normalize();
+    }
+    // println!("{}", direction);
+    acceleration.value = movement * direction * time.delta_seconds(); 
+    // transform.translation += direction * player.player_data.speed * time.delta_seconds();
+    // println!("{}", acceleration.value);
+}
+
+fn player_weapon(
+    mut commands: Commands, 
+    transform_query: Query<&Transform, With<Player>>, 
+    mut player_data: Query<&mut Player>,
+    timer: Res<PlayerFirerateTimer>, 
+    keyboard_input: Res<Input<KeyCode>>, 
+    mouse_input: Res<Input<MouseButton>>,
+    scene_assets: Res<SceneAssets>
+) {
+    let transform = transform_query.single();
+    let bullet: Handle<Image> = scene_assets.bullet.clone();
+    let Ok(mut player) = player_data.get_single_mut() else {
+        println!("Couldn't Get Player");
+        return; 
+    };
+
+    if keyboard_input.pressed(KeyCode::Space) || mouse_input.pressed(MouseButton::Left) {
+        if player.player_data.can_fire {
+            commands.spawn((MovingObjectBundle {
+                velocity: Velocity::new(transform.up() * MISSILE_SPEED),
+                acceleration: Acceleration::new(Vec3::new(0.0, 0.0, 0.0)),
+                collider: Collider::new(MISSILE_SIZE),
+                sprite: SpriteBundle {
+                    transform: Transform {
+                        translation: Vec3::new(transform.translation.x, transform.translation.y, transform.translation.z) + (15.0 * transform.up()),
+                        rotation: transform.rotation,
+                        ..default()
+                    },
+                    texture: bullet,
+                    ..default()
+                }, 
+            }, PlayerBullet,));
+            player.player_data.stats.shots_fired += 1;
+            player.player_data.can_fire = false;
+        } else if timer.timer.finished() {
+            player.player_data.can_fire = true;
+        }
+    } 
+
+}
+
+fn player_shield(mut commands: Commands, query: Query<Entity, With<Player>>, keyboard_input: Res<Input<KeyCode>>) {
+    let Ok(player) = query.get_single() else {
+        return;
+    };
+
+    if keyboard_input.pressed(KeyCode::Tab) {
+        commands.entity(player).insert(PlayerShield);
+    }
+}
+
+fn confine_player_movement(mut player_query: Query<(&mut Transform, &mut Velocity), With<Player>>, window_query: Query<&Window, With<PrimaryWindow>>) {
+    if let Ok((mut player_transform, mut player_velocity)) = player_query.get_single_mut() {
+        let window = window_query.get_single().unwrap();
+        
+        let x_min = 0.0 + HALF_PLAYER_SIZE;
+        let x_max = window.width() - HALF_PLAYER_SIZE;
+        let y_min = 0.0 + HALF_PLAYER_SIZE;
+        let y_max = window.height() - HALF_PLAYER_SIZE;
+
+
+        let mut translation = player_transform.translation;
+        if translation.x < x_min {
+            translation.x = x_min;
+            player_velocity.value *= Vec3::new(0.0, 1.0, 0.0);
+        } else if translation.x > x_max {
+            translation.x = x_max;
+            player_velocity.value *= Vec3::new(0.0, 1.0, 0.0);
+        }
+        if translation.y < y_min {
+            translation.y = y_min;
+            player_velocity.value *= Vec3::new(1.0, 0.0, 0.0);
+        } else if translation.y > y_max {
+            translation.y = y_max;
+            player_velocity.value *= Vec3::new(1.0, 0.0, 0.0);
+        }
+
+        player_transform.translation = translation;
+    }
+}
 
 #[derive(Resource)]
 pub struct PlayerFirerateTimer {
@@ -71,118 +239,7 @@ impl Default for PlayerFirerateTimer {
     }
 }
 
-fn spawn_player(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow>>, asset_server: Res<AssetServer>) {
-    let window = window_query.get_single().unwrap();
-    let player: Handle<Image> = asset_server.load("sprites/Player.png");
-
-    commands.spawn((PlayerBundle {
-        player: PlayerData { 
-            lives: 3, 
-            rpm: 60.0,
-            can_fire: true,
-            stats: Stats { 
-                score: 0, 
-                asteroids_destroyed: 0, 
-                level: 1, 
-                shots_fired: 0 
-            },
-            thrust: false
-        },
-        sprite: SpriteBundle {
-            transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0).with_scale(Vec3::new(PLAYER_SIZE, PLAYER_SIZE, 0.0)),
-            texture: player, 
-            ..default()
-        }
-    }, Player));
-}
-
-fn player_mouse_look(
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    mut action_state: ResMut<ActionState<PlayerAction>>,
-) {
-    if let Some(cursor_pos) = window_query.single().cursor_position() {
-        action_state.press(PlayerAction::Look);
-        let action_data = action_state.action_data_mut(PlayerAction::Look);
-        action_data.axis_pair = Some(DualAxisData::from_xy(cursor_pos));
-    }
-}
-
-fn control_player(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    action_state: Res<ActionState<PlayerAction>>,
-    mut pl_query: Query<&mut PlayerData, With<Player>>,
-    mut query: Query<&mut Transform, With<Player>>,
-    timer: Res<PlayerFirerateTimer>,
-) {
-    let mut player_transform = query.single_mut();
-    let mut player = pl_query.get_single_mut().unwrap();
-    let bullet: Handle<Image> = asset_server.load("sprites/Square.png");
-    if action_state.pressed(PlayerAction::Move) {
-        let move_delta = action_state.clamped_axis_pair(PlayerAction::Move).unwrap().xy() * PLAYER_SPEED;
-        player_transform.translation += Vec3::new(move_delta.x, move_delta.y, 0.0);
-        println!("Player moved to: {}", player_transform.translation.xy());
-    }
-
-    if action_state.pressed(PlayerAction::Look) {
-        let look = action_state.axis_pair(PlayerAction::Look).unwrap().xy();
-        // println!("Player looking at point: {}", look);
-        // let mut player_transform = query.get_single().expect("Need a single player");
-        let player_pos: Vec2 = player_transform.translation.xy();
-        let angle = (look - player_pos).angle_between(player_pos);
-        player_transform.rotation = Quat::from_rotation_z(angle - FRAC_PI_2);
-        // println!("Player is now at {} with rotation {}", player_transform.translation.xy(), player_transform.rotation);
-    }
-
-    if action_state.pressed(PlayerAction::Shoot) {
-        if player.can_fire {
-            println!("Shoot!");
-            commands.spawn((SpriteBundle {
-                texture: bullet,
-                transform: Transform {
-                    translation: Vec3::new(player_transform.translation.x, player_transform.translation.y, 0.0),
-                    rotation: player_transform.rotation, 
-                    // rotation: Quat::from_xyzw(player_transform.translation.x, player_transform.translation.y, player_transform.translation.z, 0.0),
-                    ..default()
-                },
-                ..default()
-            }, Bullet {
-                direction: Vec2::new(player_transform.rotation.x, player_transform.rotation.y),
-            }));
-            player.can_fire = false;
-        } else if timer.timer.finished() {
-            println!("Timer Finished");
-            player.can_fire = true;
-        }
-    }
-}
-
-fn confine_player_movement(mut player_query: Query<&mut Transform, With<Player>>, window_query: Query<&Window, With<PrimaryWindow>>) {
-    if let Ok(mut player_transform) = player_query.get_single_mut() {
-        let window = window_query.get_single().unwrap();
-        
-        let x_min = 0.0 + HALF_PLAYER_SIZE;
-        let x_max = window.width() - HALF_PLAYER_SIZE;
-        let y_min = 0.0 + HALF_PLAYER_SIZE;
-        let y_max = window.height() - HALF_PLAYER_SIZE;
-
-
-        let mut translation = player_transform.translation;
-        if translation.x < x_min {
-            translation.x = x_min;
-        } else if translation.x > x_max {
-            translation.x = x_max;
-        }
-        if translation.y < y_min {
-            translation.y = y_min;
-        } else if translation.y > y_max {
-            translation.y = y_max;
-        }
-
-        player_transform.translation = translation;
-    }
-}
-
+// Timer until player can fire another bullet.
 fn tick_player_shot_timer(mut bullet_firerate_timer: ResMut<PlayerFirerateTimer>, time: Res<Time>) {
     bullet_firerate_timer.timer.tick(time.delta());
 }
