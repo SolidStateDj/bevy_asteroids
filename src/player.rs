@@ -51,7 +51,7 @@ struct PlayerData {
     rpm: f32,
     pub can_fire: bool,
     pub boosting: Vec3,
-    pub speed: f32,
+    pub acceleration: f32,
     pub max_speed: f32,
     pub rotation_speed: f32,
     pub firerate: f32,
@@ -85,7 +85,7 @@ fn spawn_player(mut commands: Commands, window_query: Query<&Window, With<Primar
             rpm: 60.0,
             can_fire: true,
             boosting: Vec3::ZERO,
-            speed: 200.0,
+            acceleration: 200.0,
             max_speed: 10.0,
             rotation_speed: 4.0,
             firerate: PLAYER_TIME_UNTIL_NEXT_SHOT,
@@ -118,8 +118,8 @@ fn player_movement(
     let mut direction = Vec3::ZERO;
 
     if keyboard_input.pressed(KeyCode::W) || keyboard_input.pressed(KeyCode::Up) {
-        movement = player.player_data.speed;
-        direction += transform.up();
+        movement = player.player_data.acceleration;
+        direction = transform.up();
     }
     // Rotate Left
     if keyboard_input.pressed(KeyCode::A) || keyboard_input.pressed(KeyCode::Left) {
@@ -127,8 +127,8 @@ fn player_movement(
     }
     // Slow Down
     if keyboard_input.pressed(KeyCode::S) || keyboard_input.pressed(KeyCode::Down) {
-        movement = -player.player_data.speed;
-        direction += transform.up();
+        movement = -player.player_data.acceleration;
+        direction = transform.up();
     }
     // Rotate Right
     if keyboard_input.pressed(KeyCode::D) || keyboard_input.pressed(KeyCode::Right) {

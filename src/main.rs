@@ -10,6 +10,7 @@ mod asset_loader;
 
 use asset_loader::AssetLoaderPlugin;
 use bevy::{prelude::*, window::PrimaryWindow};
+use collisions::CollisionDetectionPlugin;
 use leafwing_input_manager::{plugin::InputManagerPlugin, Actionlike};
 use movement::MovementPlugin;
 use player::PlayerPlugin;
@@ -22,6 +23,7 @@ fn main() {
         .add_plugins(MovementPlugin)
         .add_plugins(PlayerPlugin)
         .add_plugins(InputManagerPlugin::<PlayerAction>::default())
+        .add_plugins(CollisionDetectionPlugin)
         .add_systems(Startup, setup)
         .run();
 }
