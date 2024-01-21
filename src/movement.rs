@@ -46,9 +46,12 @@ fn update_position(mut query: Query<(&Velocity, &mut Transform)>, time: Res<Time
     }
 }
 
-fn update_velocity(mut query: Query<(&Acceleration, &mut Velocity)>, time: Res<Time>) {
-    for (acceleration, mut velocity) in query.iter_mut() {
-        velocity.value += acceleration.value * time.delta_seconds();
+fn update_velocity(mut query: Query<(&mut Acceleration, &mut Velocity)>, time: Res<Time>) {
+    for (mut acceleration, mut velocity) in query.iter_mut() {
+        // acceleration.value = Vec3::new(0.1, 0.0, 0.0);
+        velocity.value += acceleration.value;
+        // println!("{}", acceleration.value);
+        // acceleration.value = Vec3::ZERO;
     }
 }
 

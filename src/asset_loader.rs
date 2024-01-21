@@ -20,7 +20,7 @@ fn load_assets(mut scene_assets: ResMut<SceneAssets>, asset_server: Res<AssetSer
     *scene_assets = SceneAssets {
         // asteroid: asset_server.load("sprites/Player.png"),
         spaceship: asset_server.load("sprites/Player.png"),
-        bullet: asset_server.load("sprite/Square.png"),
-        lives: asset_server.load("sprite/Lives.png"),
+        bullet: asset_server.load("sprites/Square.png"),
+        lives: asset_server.load("sprites/Lives.png"),
     }
 }
