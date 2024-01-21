@@ -6,6 +6,7 @@ pub struct SceneAssets {
     pub spaceship: Handle<Image>,
     pub bullet: Handle<Image>,
     pub lives: Handle<Image>,
+    pub asteroids: [Handle<Image>; 4],
 }
 
 pub struct AssetLoaderPlugin;
@@ -22,5 +23,11 @@ fn load_assets(mut scene_assets: ResMut<SceneAssets>, asset_server: Res<AssetSer
         spaceship: asset_server.load("sprites/Player.png"),
         bullet: asset_server.load("sprites/Square.png"),
         lives: asset_server.load("sprites/Lives.png"),
+        asteroids: [
+            asset_server.load("sprites/Asteroid_01.png"), 
+            asset_server.load("sprites/Asteroid_02.png"), 
+            asset_server.load("sprites/Asteroid_03.png"), 
+            asset_server.load("sprites/Asteroid_04.png"), 
+        ],
     }
 }

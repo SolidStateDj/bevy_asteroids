@@ -9,6 +9,7 @@ mod movement;
 mod asset_loader;
 
 use asset_loader::AssetLoaderPlugin;
+use asteroids::AsteroidPlugin;
 use bevy::{prelude::*, window::PrimaryWindow};
 use collisions::CollisionDetectionPlugin;
 use leafwing_input_manager::{plugin::InputManagerPlugin, Actionlike};
@@ -22,6 +23,7 @@ fn main() {
         .add_plugins(AssetLoaderPlugin)
         .add_plugins(MovementPlugin)
         .add_plugins(PlayerPlugin)
+        .add_plugins(AsteroidPlugin)
         .add_plugins(InputManagerPlugin::<PlayerAction>::default())
         .add_plugins(CollisionDetectionPlugin)
         .add_systems(Startup, setup)

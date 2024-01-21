@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{collisions::Collider, schedules::InGameSet};
+use crate::{collisions::Collider, schedules::InGameSet, player::Player};
 
 #[derive(Component, Debug)]
 pub struct Velocity {
@@ -40,9 +40,12 @@ impl Plugin for MovementPlugin {
     }
 }
 
-fn update_position(mut query: Query<(&mut Velocity, &mut Transform)>, time: Res<Time>, keyboard_input: Res<Input<KeyCode>>) {
-    for (mut velocity, mut transform) in query.iter_mut() {
-        if !keyboard_input.pressed(KeyCode::W) && !keyboard_input.pressed(KeyCode::Up) && !keyboard_input.pressed(KeyCode::S) && !keyboard_input.pressed(KeyCode::Down) {
+fn update_position(mut query: Query<(&mut Velocity, &mut Transform, Has<Player>)>, time: Res<Time>, keyboard_input: Res<Input<KeyCode>>) {
+    // If entity has Player tag, do stuff
+
+    for (mut velocity, mut transform, has_player) in query.iter_mut() {
+        if !keyboard_input.pressed(KeyCode::W) && !keyboard_input.pressed(KeyCode::Up) && !keyboard_input.pressed(KeyCode::S) && !keyboard_input.pressed(KeyCode::Down) 
+            && has_player {
             velocity.value *= 1.0 - (0.9 * time.delta_seconds());  
         } 
         transform.translation += velocity.value * time.delta_seconds();
