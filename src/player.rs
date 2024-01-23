@@ -1,11 +1,12 @@
-use bevy::{prelude::*, window::PrimaryWindow, transform};
+use bevy::{prelude::*, window::PrimaryWindow, transform, sprite::MaterialMesh2dBundle};
 
-pub const PLAYER_SIZE: f32 = 0.5;
+pub const PLAYER_SIZE: f32 = 20.0;
+const PLAYER_SCALE: f32 = 0.5;
 pub const HALF_PLAYER_SIZE: f32 = 16.0;
 pub const PLAYER_TIME_UNTIL_NEXT_SHOT: f32 = 0.15;
 
 pub const MISSILE_SPEED: f32 = 500.0;
-pub const MISSILE_SIZE: f32 = 0.1;
+pub const MISSILE_SIZE: f32 = 5.0;
 
 use crate::{bullets::{Bullet, BulletsPlugin}, schedules::InGameSet, movement::{MovingObjectBundle, Velocity, Acceleration, self}, collisions::Collider, asset_loader::SceneAssets, player};
 
@@ -35,7 +36,7 @@ impl Plugin for PlayerPlugin {
 // A player marker
 #[derive(Component)]
 pub struct Player {
-    player_data: PlayerData,
+    pub player_data: PlayerData,
 }
 
 #[derive(Component, Debug)]
@@ -46,8 +47,8 @@ pub struct PlayerShield;
 
 // Player Data
 #[derive(Component)]
-struct PlayerData {
-    lives: u32,
+pub struct PlayerData {
+    pub lives: u32,
     rpm: f32,
     pub can_fire: bool,
     pub boosting: Vec3,
@@ -55,27 +56,41 @@ struct PlayerData {
     pub max_speed: f32,
     pub rotation_speed: f32,
     pub firerate: f32,
-    stats: Stats,
+    pub stats: Stats,
 }
 // Stats for the player
-struct Stats {
-    score: u32,
-    asteroids_destroyed: u32,
+pub struct Stats {
+    pub score: u32,
+    pub asteroids_destroyed: u32,
     level: u32,
-    shots_fired: u32,
+    pub shots_fired: u32,
 }
 
 // Spawns the player bundle
-fn spawn_player(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow>>, scene_assets: Res<SceneAssets>,) {
+fn spawn_player(
+    mut commands: Commands, 
+    window_query: Query<&Window, With<PrimaryWindow>>, 
+    scene_assets: Res<SceneAssets>, 
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
     let window = window_query.get_single().unwrap();
     let player: Handle<Image> = scene_assets.spaceship.clone();
 
+    /* commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes.add(shape::Circle::new(20.0).into()).into(),
+        material: materials.add(ColorMaterial::from(Color::rgba(255.0, 0.0, 255.0, 150.0))),
+        transform: Transform::from_translation(Vec3::new(window.width() / 2.0, window.height() / 2.0, -0.1)),
+        ..default()
+    }); */
+
+    // Spawn the player
     commands.spawn((MovingObjectBundle {
         velocity: Velocity::new(Vec3::ZERO),
         acceleration: Acceleration::new(Vec3::ZERO),
         collider: Collider::new(PLAYER_SIZE),
         sprite: SpriteBundle {
-            transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0).with_scale(Vec3::new(PLAYER_SIZE, PLAYER_SIZE, 0.0)),
+            transform: Transform::from_xyz(window.width() / 2.0, window.height() / 2.0, 0.0).with_scale(Vec3::new(PLAYER_SCALE, PLAYER_SCALE, 0.0)),
             texture: player, 
             ..default()
         }
@@ -103,6 +118,7 @@ fn player_movement(
     keyboard_input: Res<Input<KeyCode>>,
     player_data: Query<&Player>,
     mut player_query: Query<(&mut Transform, &mut Acceleration), With<Player>>, 
+    player_gt: Query<&GlobalTransform, With<Player>>,
     time: Res<Time>,
 ) {
     let Ok(player) = player_data.get_single() else {
@@ -141,6 +157,10 @@ fn player_movement(
     }
     // println!("{}", direction);
     acceleration.value = movement * direction * time.delta_seconds(); 
+    let gtm = player_gt.iter();
+    for gt in gtm {
+        // println!("Player: {}", gt.translation())
+    }
     // transform.translation += direction * player.player_data.speed * time.delta_seconds();
     // println!("{}", acceleration.value);
 }

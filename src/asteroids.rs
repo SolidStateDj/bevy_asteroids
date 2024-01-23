@@ -17,7 +17,9 @@ impl Plugin for AsteroidPlugin {
     }
 }
 
-pub const ASTEROID_SPAWNRATE: f32 = 5.0;
+pub const ASTEROID_SPAWNRATE: f32 = 10.0;
+const ASTEROID_BASE_SIZE: f32 = 16.0;
+const ASTEROID_SPEED_RANGE: Range<f32> = 100.0..500.0;
 
 #[derive(Component)]
 pub struct Asteroid;
@@ -34,10 +36,11 @@ fn spawn_asteroids(
     }
     let mut rng = rand::thread_rng();
     // Pick random coords
-    let translation = Vec3::new(rng.gen_range(0.0..window.width()), rng.gen_range(0.0..window.height()), 0.0);
+    // let translation = Vec3::new(rng.gen_range(0.0..window.width()), rng.gen_range(0.0..window.height()), 0.0);
+    let translation = Vec3::new(640.0, 360.0, 0.0);
 
     // Pick Random Size
-    let asteroid_size = rng.gen_range(0..3);
+    let asteroid_size = rng.gen_range(0..4);
 
     let asteroid = SpriteBundle {
         transform: Transform::from_translation(translation).with_scale(Vec3::new(
@@ -50,12 +53,17 @@ fn spawn_asteroids(
     };
 
     // Pick Random Speed
-    let velocity = Vec3::new(rng.gen_range(-1.0..1.0), 0.0, rng.gen_range(-1.0..1.0)).normalize_or_zero() * rng.gen_range(100.0..1000.0);
+    /* let velocity = Vec3::new(
+        rng.gen_range(-1.0..1.0), 
+        rng.gen_range(-1.0..1.0),
+        0.0, 
+    ).normalize_or_zero() * rng.gen_range(ASTEROID_SPEED_RANGE); */
+    let velocity = Vec3::ZERO;
 
     commands.spawn((MovingObjectBundle {
         acceleration: Acceleration::new(Vec3::ZERO),
         velocity: Velocity::new(velocity),
-        collider: Collider::new(asteroid_size as f32),
+        collider: Collider::new(ASTEROID_BASE_SIZE * (asteroid_size + 1) as f32),
         sprite: asteroid,
     }, Asteroid, ));
     println!("Spawned Asteroid with size {} at {} with speed {}", asteroid_size, translation, velocity); 

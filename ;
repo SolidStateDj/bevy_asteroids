@@ -85,8 +85,6 @@ fn handle_asteroid_collisions (
                 commands.entity(entity).despawn_recursive();
                 commands.entity(collided_entity).despawn_recursive();
             }
-
-            // Player collision detection does not work in here for some reason
         }
     } 
 }
@@ -97,8 +95,8 @@ fn handle_player_collisions (
     asteroid_query: Query<&Asteroid>,
     mut player_query: Query<&mut Player>,
 ) {
-    let collider = player_collider_query.get_single().unwrap();
-
+    // For every player collision 
+    let collider = player_collider_query.get_single();
     // For every entry in its local database of collisions
     for &collided_entity in collider.colliding_entities.iter() {
         if player_collider_query.get(collided_entity).is_ok() {
@@ -117,5 +115,8 @@ fn handle_player_collisions (
             commands.entity(collided_entity).despawn_recursive();
         }
     }
+    for collider in player_collider_query.iter() {
+    } 
+
 }
 

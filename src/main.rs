@@ -12,6 +12,7 @@ use asset_loader::AssetLoaderPlugin;
 use asteroids::AsteroidPlugin;
 use bevy::{prelude::*, window::PrimaryWindow};
 use collisions::CollisionDetectionPlugin;
+use despawn::DespawnPlugin;
 use leafwing_input_manager::{plugin::InputManagerPlugin, Actionlike};
 use movement::MovementPlugin;
 use player::PlayerPlugin;
@@ -26,6 +27,7 @@ fn main() {
         .add_plugins(AsteroidPlugin)
         .add_plugins(InputManagerPlugin::<PlayerAction>::default())
         .add_plugins(CollisionDetectionPlugin)
+        .add_plugins(DespawnPlugin)
         .add_systems(Startup, setup)
         .run();
 }
