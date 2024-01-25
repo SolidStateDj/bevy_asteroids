@@ -1,5 +1,7 @@
 use bevy::{prelude::*, window::PrimaryWindow};
 
+use crate::{state::AppState, schedules::InGameSet};
+
 pub const BULLET_SPEED: f32 = 250.0;
 pub const BULLET_DESPAWN_DISTANCE: f32 = 50.0;
 
@@ -8,9 +10,9 @@ pub struct BulletsPlugin;
 impl Plugin for BulletsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (
-            update_bullets,
-            despawn_bullets,
-        ));
+            update_bullets.in_set(InGameSet::EntityUpdates),
+            despawn_bullets.in_set(InGameSet::DespawnEntities),
+        ).run_if(in_state(AppState::InGame)).chain());
     }
 }
 
@@ -21,7 +23,7 @@ pub struct Bullet {
 }
 
 fn update_bullets(mut bullet_query: Query<(&mut Transform, &Bullet)>, time: Res<Time>) {
-    for (mut transform, bullet) in bullet_query.iter_mut() {
+    for (mut transform, _bullet) in bullet_query.iter_mut() {
         let direction = Vec3::new(1.0, 1.0, 0.0);
         transform.translation += direction * BULLET_SPEED * time.delta_seconds();
     }

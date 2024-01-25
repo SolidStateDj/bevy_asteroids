@@ -1,9 +1,9 @@
 use std::ops::Range;
 
-use bevy::{prelude::*, window::PrimaryWindow, render::texture};
+use bevy::{prelude::*, window::PrimaryWindow};
 use rand::Rng;
 
-use crate::{movement::{MovingObjectBundle, Acceleration, Velocity}, collisions::Collider, asset_loader::SceneAssets};
+use crate::{movement::{MovingObjectBundle, Acceleration, Velocity}, collisions::Collider, asset_loader::SceneAssets, state::AppState};
 
 pub struct AsteroidPlugin;
 
@@ -13,11 +13,11 @@ impl Plugin for AsteroidPlugin {
         .add_systems(Update, (
             spawn_asteroids,
             tick_asteroid_spawn_timer,
-        ));
+        ).run_if(in_state(AppState::InGame)));
     }
 }
 
-pub const ASTEROID_SPAWNRATE: f32 = 10.0;
+pub const ASTEROID_SPAWNRATE: f32 = 1.0;
 const ASTEROID_BASE_SIZE: f32 = 16.0;
 const ASTEROID_SPEED_RANGE: Range<f32> = 100.0..500.0;
 
@@ -36,8 +36,8 @@ fn spawn_asteroids(
     }
     let mut rng = rand::thread_rng();
     // Pick random coords
-    // let translation = Vec3::new(rng.gen_range(0.0..window.width()), rng.gen_range(0.0..window.height()), 0.0);
-    let translation = Vec3::new(640.0, 360.0, 0.0);
+    let translation = Vec3::new(rng.gen_range(0.0..window.width()), rng.gen_range(0.0..window.height()), 0.0);
+    // let translation = Vec3::new(640.0, 360.0, 0.0);
 
     // Pick Random Size
     let asteroid_size = rng.gen_range(0..4);
@@ -53,12 +53,12 @@ fn spawn_asteroids(
     };
 
     // Pick Random Speed
-    /* let velocity = Vec3::new(
+    let velocity = Vec3::new(
         rng.gen_range(-1.0..1.0), 
         rng.gen_range(-1.0..1.0),
         0.0, 
-    ).normalize_or_zero() * rng.gen_range(ASTEROID_SPEED_RANGE); */
-    let velocity = Vec3::ZERO;
+    ).normalize_or_zero() * rng.gen_range(ASTEROID_SPEED_RANGE);
+    // let velocity = Vec3::ZERO;
 
     commands.spawn((MovingObjectBundle {
         acceleration: Acceleration::new(Vec3::ZERO),

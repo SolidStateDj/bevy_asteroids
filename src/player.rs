@@ -1,4 +1,4 @@
-use bevy::{prelude::*, window::PrimaryWindow, transform, sprite::MaterialMesh2dBundle};
+use bevy::{prelude::*, window::PrimaryWindow};
 
 pub const PLAYER_SIZE: f32 = 20.0;
 const PLAYER_SCALE: f32 = 0.5;
@@ -8,26 +8,23 @@ pub const PLAYER_TIME_UNTIL_NEXT_SHOT: f32 = 0.15;
 pub const MISSILE_SPEED: f32 = 500.0;
 pub const MISSILE_SIZE: f32 = 5.0;
 
-use crate::{bullets::{Bullet, BulletsPlugin}, schedules::InGameSet, movement::{MovingObjectBundle, Velocity, Acceleration, self}, collisions::Collider, asset_loader::SceneAssets, player};
+use crate::{schedules::InGameSet, movement::{MovingObjectBundle, Velocity, Acceleration}, collisions::Collider, asset_loader::SceneAssets, state::AppState};
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins((
-                BulletsPlugin,
-        ));
+    fn build(&self, app: &mut App) { 
         app.init_resource::<PlayerFirerateTimer>();
-        app.add_systems(PostStartup, spawn_player);
+        app.add_systems(OnEnter(AppState::InGame), spawn_player);
         app.add_systems(Update, (
             player_movement,
             confine_player_movement,
             player_weapon,
             player_shield,
-        ).chain().in_set(InGameSet::UserInput));
+        ).run_if(in_state(AppState::InGame)).chain().in_set(InGameSet::UserInput));
         app.add_systems(Update, (
             tick_player_shot_timer,
-        ));
+        ).run_if(in_state(AppState::InGame)));
     } 
 }
 
@@ -71,18 +68,9 @@ fn spawn_player(
     mut commands: Commands, 
     window_query: Query<&Window, With<PrimaryWindow>>, 
     scene_assets: Res<SceneAssets>, 
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let window = window_query.get_single().unwrap();
     let player: Handle<Image> = scene_assets.spaceship.clone();
-
-    /* commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(shape::Circle::new(20.0).into()).into(),
-        material: materials.add(ColorMaterial::from(Color::rgba(255.0, 0.0, 255.0, 150.0))),
-        transform: Transform::from_translation(Vec3::new(window.width() / 2.0, window.height() / 2.0, -0.1)),
-        ..default()
-    }); */
 
     // Spawn the player
     commands.spawn((MovingObjectBundle {
@@ -118,7 +106,6 @@ fn player_movement(
     keyboard_input: Res<Input<KeyCode>>,
     player_data: Query<&Player>,
     mut player_query: Query<(&mut Transform, &mut Acceleration), With<Player>>, 
-    player_gt: Query<&GlobalTransform, With<Player>>,
     time: Res<Time>,
 ) {
     let Ok(player) = player_data.get_single() else {
@@ -155,14 +142,7 @@ fn player_movement(
     if direction.length() > 0.0 {
         direction = direction.normalize();
     }
-    // println!("{}", direction);
     acceleration.value = movement * direction * time.delta_seconds(); 
-    let gtm = player_gt.iter();
-    for gt in gtm {
-        // println!("Player: {}", gt.translation())
-    }
-    // transform.translation += direction * player.player_data.speed * time.delta_seconds();
-    // println!("{}", acceleration.value);
 }
 
 fn player_weapon(

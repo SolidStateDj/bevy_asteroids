@@ -1,42 +1,43 @@
 // mod input;
 mod player;
-mod bullets;
 mod asteroids;
 mod collisions;
 mod schedules;
 mod despawn;
 mod movement;
 mod asset_loader;
+mod state;
+mod menu;
+// mod bullets;
 
 use asset_loader::AssetLoaderPlugin;
 use asteroids::AsteroidPlugin;
 use bevy::{prelude::*, window::PrimaryWindow};
 use collisions::CollisionDetectionPlugin;
 use despawn::DespawnPlugin;
-use leafwing_input_manager::{plugin::InputManagerPlugin, Actionlike};
+use menu::MenuPlugin;
 use movement::MovementPlugin;
 use player::PlayerPlugin;
+use state::AppState;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+
+        .add_state::<AppState>()
+
         // Custom Plugins
         .add_plugins(AssetLoaderPlugin)
         .add_plugins(MovementPlugin)
         .add_plugins(PlayerPlugin)
         .add_plugins(AsteroidPlugin)
-        .add_plugins(InputManagerPlugin::<PlayerAction>::default())
         .add_plugins(CollisionDetectionPlugin)
         .add_plugins(DespawnPlugin)
-        .add_systems(Startup, setup)
-        .run();
-}
+        .add_plugins(MenuPlugin)
 
-#[derive(Actionlike, PartialEq, Eq, Clone, Copy, Hash, Debug, Reflect)]
-pub enum PlayerAction {
-    Boost,
-    Turn,
-    Shoot,
+        .add_systems(Startup, setup)
+
+        .run();
 }
 
 #[derive(Component)]
@@ -49,5 +50,4 @@ fn setup(mut commands: Commands, window_query: Query<&Window, With<PrimaryWindow
         ..default()
     }, MainCamera));
 }
-
 

@@ -1,6 +1,6 @@
 use bevy::{prelude::*, utils::{HashMap}};
 
-use crate::{schedules::InGameSet, asteroids::Asteroid, player::Player, player::PlayerBullet, bullets::Bullet};
+use crate::{schedules::InGameSet, asteroids::Asteroid, player::Player, player::PlayerBullet, state::AppState};
 
 #[derive(Component, Debug)]
 pub struct Collider {
@@ -22,11 +22,12 @@ pub struct CollisionDetectionPlugin;
 impl Plugin for CollisionDetectionPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, 
-            collision_detection.in_set(InGameSet::CollisionDetection),
-        ).add_systems(Update, (
-                handle_asteroid_collisions,
-                handle_player_collisions,
-            ).in_set(InGameSet::DespawnEntities),
+            collision_detection.run_if(in_state(AppState::InGame)).in_set(InGameSet::CollisionDetection),
+        );
+        app.add_systems(Update, (
+            handle_asteroid_collisions,
+            handle_player_collisions,
+        ).run_if(in_state(AppState::InGame)).in_set(InGameSet::DespawnEntities),
         );
     }
 }
@@ -73,10 +74,13 @@ fn handle_asteroid_collisions (
             // if the entity stored in the list of colliding_entities exists in the query for
             // colliders tagged with Asteroid it means an Asteroid has collided with an Asteroid.
             if asteroid_query.get(collided_entity).is_ok() {
-                // println!("Asteroid collided with asteroid");
+                println!("Asteroid collided with asteroid");
                 continue;
             }
             // An asteroid has collided with something that is not another asteroid
+
+            // It never gets here whenever Menu is the initial state
+            println!("It got here");
 
             let Ok(mut player) = player_query.get_single_mut() else { return; };
             if bullet_query.get(collided_entity).is_ok() {
@@ -98,15 +102,10 @@ fn handle_player_collisions (
     mut player_query: Query<&mut Player>,
 ) {
     let collider = player_collider_query.get_single().unwrap();
+    let Ok(mut player) = player_query.get_single_mut() else { return; };
 
     // For every entry in its local database of collisions
     for &collided_entity in collider.colliding_entities.iter() {
-        if player_collider_query.get(collided_entity).is_ok() {
-            continue;
-        }
-        // An asteroid has collided with something that is not another asteroid
-
-        let Ok(mut player) = player_query.get_single_mut() else { return; };
         if asteroid_query.get(collided_entity).is_ok() {
             println!("Player and Asteroid Collision");
             if player.player_data.lives - 1 > 0 {
