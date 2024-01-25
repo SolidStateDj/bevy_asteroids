@@ -7,6 +7,7 @@ pub struct SceneAssets {
     pub bullet: Handle<Image>,
     pub lives: Handle<Image>,
     pub asteroids: [Handle<Image>; 4],
+    pub font: Handle<Font>,
 }
 
 pub struct AssetLoaderPlugin;
@@ -29,5 +30,6 @@ fn load_assets(mut scene_assets: ResMut<SceneAssets>, asset_server: Res<AssetSer
             asset_server.load("sprites/Asteroid_03.png"), 
             asset_server.load("sprites/Asteroid_04.png"), 
         ],
+        font: asset_server.load("fonts/FiraMono-Medium.ttf"),
     }
 }

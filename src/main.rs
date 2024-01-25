@@ -8,13 +8,14 @@ mod movement;
 mod asset_loader;
 mod state;
 mod menu;
-// mod bullets;
+mod hud;
 
 use asset_loader::AssetLoaderPlugin;
 use asteroids::AsteroidPlugin;
 use bevy::{prelude::*, window::PrimaryWindow};
 use collisions::CollisionDetectionPlugin;
 use despawn::DespawnPlugin;
+use hud::HudPlugin;
 use menu::MenuPlugin;
 use movement::MovementPlugin;
 use player::PlayerPlugin;
@@ -34,6 +35,7 @@ fn main() {
         .add_plugins(CollisionDetectionPlugin)
         .add_plugins(DespawnPlugin)
         .add_plugins(MenuPlugin)
+        .add_plugins(HudPlugin)
 
         .add_systems(Startup, setup)
 
