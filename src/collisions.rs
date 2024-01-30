@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::{HashMap}};
+use bevy::{app::AppExit, prelude::*, utils::{HashMap}};
 
 use crate::{schedules::InGameSet, asteroids::Asteroid, player::Player, player::PlayerBullet, state::AppState, hud::{Lives, IMAGE_MARGIN, Score}, asset_loader::SceneAssets};
 
@@ -27,6 +27,7 @@ impl Plugin for CollisionDetectionPlugin {
         app.add_systems(Update, (
             handle_asteroid_collisions,
             handle_player_collisions,
+            handle_bullet_collisions,
         ).run_if(in_state(AppState::InGame)).in_set(InGameSet::DespawnEntities),
         );
     }
@@ -80,9 +81,6 @@ fn handle_asteroid_collisions (
             }
             // An asteroid has collided with something that is not another asteroid
 
-            // It never gets here whenever Menu is the initial state
-            println!("It got here");
-
             let Ok(mut player) = player_query.get_single_mut() else { return; };
             if bullet_query.get(collided_entity).is_ok() {
                 println!("Bullet and Asteroid Collision");
@@ -109,6 +107,7 @@ fn handle_player_collisions (
     mut player_query: Query<&mut Player>,
     mut lives_node: Query<Entity, With<Lives>>,
     scene_assets: Res<SceneAssets>,
+    mut exit: EventWriter<AppExit>,
 ) {
     let collider = player_collider_query.get_single().unwrap();
     let Ok(mut player) = player_query.get_single_mut() else { return; };
@@ -157,7 +156,8 @@ fn handle_player_collisions (
                     }
                     );          
             } else {
-                println!("Game Over");
+                println!("\nGame Over!\n");
+                exit.send(AppExit);
                 return;
             }
             // commands.entity(entity).despawn_recursive();
@@ -166,4 +166,43 @@ fn handle_player_collisions (
         }
 }
 
+fn handle_bullet_collisions (
+    mut commands: Commands, 
+    bullet_query: Query<(Entity, &Collider), With<PlayerBullet>>, 
+    asteroid_query: Query<&Asteroid>,
+    mut player_query: Query<&mut Player>,
+    mut text_query: Query<&mut Text, With<Score>>,
+) {
+    // For every bullet 
+    for (entity, collider) in bullet_query.iter() {
+        // For every entry in its local database of collisions
+        for &collided_entity in collider.colliding_entities.iter() {
+            // if the entity stored in the list of colliding_entities exists in the query for
+            // colliders tagged with Asteroid it means an Asteroid has collided with an Asteroid.
+            if bullet_query.get(collided_entity).is_ok() {
+                println!("Asteroid collided with asteroid");
+                continue;
+            }
+            // An asteroid has collided with something that is not another asteroid
 
+            // It never gets here whenever Menu is the initial state
+            println!("It got here");
+
+            let Ok(mut player) = player_query.get_single_mut() else { return; };
+            if asteroid_query.get(collided_entity).is_ok() {
+                println!("Bullet and Asteroid Collision");
+                player.player_data.stats.asteroids_destroyed += 1;
+                player.player_data.stats.score += 100;
+
+                for mut text in text_query.iter_mut() {
+                    text.sections[0].value = format!("Score: {}", player.player_data.stats.score);
+                }
+                
+                commands.entity(entity).despawn_recursive();
+                commands.entity(collided_entity).despawn_recursive();
+            }
+
+            // Player collision detection does not work in here for some reason
+        }
+    } 
+}
